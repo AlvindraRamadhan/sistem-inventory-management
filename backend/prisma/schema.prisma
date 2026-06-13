@@ -1,0 +1,631 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ───────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  admin
+  apoteker
+}
+
+enum TipeLokasi {
+  GUDANG
+  RUANG
+  RAK
+  LACI
+}
+
+enum KondisiPenyimpanan {
+  SUHU_RUANG
+  DINGIN
+  TERKONTROL
+}
+
+enum StokStatus {
+  AKTIF
+  KADALUARSA
+  HABIS
+  RUSAK
+}
+
+enum OpnameStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum POStatus {
+  DRAFT
+  PENDING_APPROVAL
+  APPROVED
+  SENT
+  PARTIAL
+  COMPLETED
+  CANCELLED
+}
+
+enum GRStatus {
+  MENUNGGU_KEDATANGAN
+  PERLU_INPUT_APOTEKER
+  PERLU_REVIEW_ADMIN
+  DISETUJUI
+  DITOLAK
+}
+
+enum InvoiceStatus {
+  BELUM_BAYAR
+  LUNAS
+  JATUH_TEMPO
+}
+
+enum AlkesStatus {
+  AKTIF
+  TIDAK_AKTIF
+  DALAM_PERBAIKAN
+}
+
+enum KalibrasiStatus {
+  TERJADWAL
+  SELESAI
+  TERLAMBAT
+}
+
+enum TerminPembayaran {
+  TUJUH_HARI       @map("7_HARI")
+  EMPAT_BELAS_HARI @map("14_HARI")
+  TIGA_PULUH_HARI  @map("30_HARI")
+  COD
+}
+
+// ─── MODELS ──────────────────────────────────────────────────────────────────
+
+model Profile {
+  id        String   @id @db.Uuid
+  name      String
+  email     String
+  role      UserRole @default(apoteker)
+  unit      String?
+  avatarUrl String?  @map("avatar_url")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  stokMasukCreated    StokMasuk[]       @relation("StokMasukCreatedBy")
+  stokKeluarCreated   StokKeluar[]      @relation("StokKeluarCreatedBy")
+  defektaCreated      Defekta[]         @relation("DefektaCreatedBy")
+  defektaApproved     Defekta[]         @relation("DefektaApprovedBy")
+  opnameCreated       StokOpname[]      @relation("OpnameCreatedBy")
+  opnameApproved      StokOpname[]      @relation("OpnameApprovedBy")
+  mutasiCreated       MutasiLokasi[]    @relation("MutasiCreatedBy")
+  poCreated           PurchaseOrder[]   @relation("POCreatedBy")
+  poApproved          PurchaseOrder[]   @relation("POApprovedBy")
+  grCreated           GoodReceipt[]     @relation("GRCreatedBy")
+  grApproved          GoodReceipt[]     @relation("GRApprovedBy")
+  grRevisiSubmitted   GrRevisi[]        @relation("GrRevisiSubmittedBy")
+  invoiceCreated      PurchaseInvoice[] @relation("InvoiceCreatedBy")
+  invoiceMarkedLunas  PurchaseInvoice[] @relation("InvoiceMarkedLunasBy")
+  auditLogs           AuditLog[]
+  notificationTargets Notification[]
+
+  @@map("profiles")
+}
+
+model Kategori {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kode      String   @unique
+  nama      String
+  deskripsi String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  obat      Obat[]
+
+  @@map("kategori")
+}
+
+model Satuan {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  nama      String   @unique
+  singkatan String
+  createdAt DateTime @default(now()) @map("created_at")
+  obat      Obat[]
+
+  @@map("satuan")
+}
+
+model LokasiGudang {
+  id         String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kode       String             @unique
+  nama       String
+  tipe       TipeLokasi
+  parentId   String?            @map("parent_id") @db.Uuid
+  path       String
+  kapasitas  Int?
+  terpakai   Int                @default(0)
+  kondisi    KondisiPenyimpanan @default(SUHU_RUANG)
+  keterangan String?
+  createdAt  DateTime           @default(now()) @map("created_at")
+  updatedAt  DateTime           @updatedAt @map("updated_at")
+
+  parent   LokasiGudang?  @relation("LokasiHierarchy", fields: [parentId], references: [id])
+  children LokasiGudang[] @relation("LokasiHierarchy")
+
+  obatDefault Obat[]         @relation("ObatLokasiDefault")
+  batches     Batch[]
+  stokMasuk   StokMasuk[]
+  alkesItems  Alkes[]
+  grItems     GrItem[]
+  opnameItems OpnameItem[]
+  mutasiDari  MutasiLokasi[] @relation("MutasiDariLokasi")
+  mutasiKe    MutasiLokasi[] @relation("MutasiKeLokasi")
+
+  @@map("lokasi_gudang")
+}
+
+model Supplier {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kode      String           @unique
+  nama      String
+  pic       String?
+  telepon   String?
+  email     String?
+  alamat    String?
+  termin    TerminPembayaran @default(TIGA_PULUH_HARI)
+  isActive  Boolean          @default(true) @map("is_active")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+
+  obat             Obat[]
+  purchaseOrders   PurchaseOrder[]
+  goodReceipts     GoodReceipt[]
+  purchaseInvoices PurchaseInvoice[]
+
+  @@map("supplier")
+}
+
+model Obat {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kode            String   @unique
+  nama            String
+  namaGenerik     String?  @map("nama_generik")
+  kategoriId      String   @map("kategori_id") @db.Uuid
+  satuanId        String   @map("satuan_id") @db.Uuid
+  supplierId      String?  @map("supplier_id") @db.Uuid
+  lokasiDefaultId String?  @map("lokasi_default_id") @db.Uuid
+  stokMinimal     Int      @default(0) @map("stok_minimal")
+  stokMaksimal    Int?     @map("stok_maksimal")
+  hargaBeli       Decimal  @default(0) @map("harga_beli") @db.Decimal(15, 2)
+  hargaJual       Decimal? @map("harga_jual") @db.Decimal(15, 2)
+  stokSaat        Int      @default(0) @map("stok_saat")
+  isActive        Boolean  @default(true) @map("is_active")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  kategori      Kategori      @relation(fields: [kategoriId], references: [id])
+  satuan        Satuan        @relation(fields: [satuanId], references: [id])
+  supplier      Supplier?     @relation(fields: [supplierId], references: [id])
+  lokasiDefault LokasiGudang? @relation("ObatLokasiDefault", fields: [lokasiDefaultId], references: [id])
+
+  batches     Batch[]
+  stokMasuk   StokMasuk[]
+  stokKeluar  StokKeluar[]
+  defekta     Defekta[]
+  opnameItems OpnameItem[]
+  mutasi      MutasiLokasi[]
+  poItems     PoItem[]
+
+  @@index([kategoriId])
+  @@index([supplierId])
+  @@index([isActive])
+  @@map("obat")
+}
+
+model Alkes {
+  id                          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  kode                        String      @unique
+  nama                        String
+  merek                       String?
+  model                       String?
+  serialNumber                String?     @map("serial_number")
+  lokasiId                    String?     @map("lokasi_id") @db.Uuid
+  status                      AlkesStatus @default(AKTIF)
+  tanggalKalibrasiTerakhir    DateTime?   @map("tanggal_kalibrasi_terakhir") @db.Date
+  tanggalKalibrasiSelanjutnya DateTime?   @map("tanggal_kalibrasi_selanjutnya") @db.Date
+  createdAt                   DateTime    @default(now()) @map("created_at")
+  updatedAt                   DateTime    @updatedAt @map("updated_at")
+
+  lokasi           LokasiGudang?     @relation(fields: [lokasiId], references: [id])
+  kalibrasiRecords KalibrasiRecord[]
+
+  @@index([status])
+  @@index([lokasiId])
+  @@map("alkes")
+}
+
+model KalibrasiRecord {
+  id                 String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  alkesId            String          @map("alkes_id") @db.Uuid
+  status             KalibrasiStatus @default(TERJADWAL)
+  tanggalKalibrasi   DateTime?       @map("tanggal_kalibrasi") @db.Date
+  tanggalSelanjutnya DateTime        @map("tanggal_selanjutnya") @db.Date
+  intervalBulan      Int             @default(12) @map("interval_bulan")
+  sertifikatNo       String?         @map("sertifikat_no")
+  petugasKalibrasi   String?         @map("petugas_kalibrasi")
+  catatan            String?
+  createdAt          DateTime        @default(now()) @map("created_at")
+  updatedAt          DateTime        @updatedAt @map("updated_at")
+
+  alkes Alkes @relation(fields: [alkesId], references: [id], onDelete: Cascade)
+
+  @@map("kalibrasi_record")
+}
+
+model Batch {
+  id          String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  obatId      String     @map("obat_id") @db.Uuid
+  batchNumber String     @map("batch_number")
+  tglProduksi DateTime?  @map("tgl_produksi") @db.Date
+  expiredDate DateTime   @map("expired_date") @db.Date
+  qty         Int        @default(0)
+  lokasiId    String     @map("lokasi_id") @db.Uuid
+  hargaBeli   Decimal    @default(0) @map("harga_beli") @db.Decimal(15, 2)
+  status      StokStatus @default(AKTIF)
+  createdAt   DateTime   @default(now()) @map("created_at")
+
+  obat            Obat              @relation(fields: [obatId], references: [id])
+  lokasi          LokasiGudang      @relation(fields: [lokasiId], references: [id])
+  defekta         Defekta[]
+  opnameItems     OpnameItem[]
+  stokKeluarBatch StokKeluarBatch[]
+  mutasi          MutasiLokasi[]
+
+  @@unique([obatId, batchNumber])
+  @@index([obatId])
+  @@index([status])
+  @@index([expiredDate])
+  @@index([lokasiId])
+  @@map("batch")
+}
+
+model StokMasuk {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  obatId        String   @map("obat_id") @db.Uuid
+  batchNumber   String   @map("batch_number")
+  expiredDate   DateTime @map("expired_date") @db.Date
+  qty           Int
+  lokasiId      String   @map("lokasi_id") @db.Uuid
+  hargaBeli     Decimal  @default(0) @map("harga_beli") @db.Decimal(15, 2)
+  alasan        String
+  referenceId   String?  @map("reference_id")
+  referenceType String?  @map("reference_type")
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  obat    Obat         @relation(fields: [obatId], references: [id])
+  lokasi  LokasiGudang @relation(fields: [lokasiId], references: [id])
+  creator Profile      @relation("StokMasukCreatedBy", fields: [createdBy], references: [id])
+
+  @@index([obatId])
+  @@index([createdAt])
+  @@map("stok_masuk")
+}
+
+model StokKeluar {
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  obatId        String   @map("obat_id") @db.Uuid
+  totalQty      Int      @map("total_qty")
+  alasan        String
+  referenceId   String?  @map("reference_id")
+  referenceType String?  @map("reference_type")
+  createdBy     String   @map("created_by") @db.Uuid
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  obat    Obat              @relation(fields: [obatId], references: [id])
+  creator Profile           @relation("StokKeluarCreatedBy", fields: [createdBy], references: [id])
+  batches StokKeluarBatch[]
+
+  @@index([obatId])
+  @@index([createdAt])
+  @@map("stok_keluar")
+}
+
+model StokKeluarBatch {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  stokKeluarId String   @map("stok_keluar_id") @db.Uuid
+  batchId      String   @map("batch_id") @db.Uuid
+  batchNumber  String   @map("batch_number")
+  expiredDate  DateTime @map("expired_date") @db.Date
+  qty          Int
+
+  stokKeluar StokKeluar @relation(fields: [stokKeluarId], references: [id], onDelete: Cascade)
+  batch      Batch      @relation(fields: [batchId], references: [id])
+
+  @@map("stok_keluar_batch")
+}
+
+model Defekta {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  obatId         String       @map("obat_id") @db.Uuid
+  batchId        String       @map("batch_id") @db.Uuid
+  batchNumber    String       @map("batch_number")
+  qty            Int
+  alasan         String
+  status         OpnameStatus @default(PENDING)
+  catatanAdmin   String?      @map("catatan_admin")
+  createdBy      String       @map("created_by") @db.Uuid
+  approvedBy     String?      @map("approved_by") @db.Uuid
+  approvedAt     DateTime?    @map("approved_at")
+  rejectedReason String?      @map("rejected_reason")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  obat     Obat     @relation(fields: [obatId], references: [id])
+  batch    Batch    @relation(fields: [batchId], references: [id])
+  creator  Profile  @relation("DefektaCreatedBy", fields: [createdBy], references: [id])
+  approver Profile? @relation("DefektaApprovedBy", fields: [approvedBy], references: [id])
+
+  @@index([status])
+  @@index([obatId])
+  @@map("defekta")
+}
+
+model StokOpname {
+  id             String       @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  noOpname       String       @unique @map("no_opname")
+  status         OpnameStatus @default(PENDING)
+  tanggalOpname  DateTime     @map("tanggal_opname") @db.Date
+  catatan        String?
+  createdBy      String       @map("created_by") @db.Uuid
+  approvedBy     String?      @map("approved_by") @db.Uuid
+  approvedAt     DateTime?    @map("approved_at")
+  rejectedReason String?      @map("rejected_reason")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+
+  creator  Profile      @relation("OpnameCreatedBy", fields: [createdBy], references: [id])
+  approver Profile?     @relation("OpnameApprovedBy", fields: [approvedBy], references: [id])
+  items    OpnameItem[]
+
+  @@index([status])
+  @@map("stok_opname")
+}
+
+model OpnameItem {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  opnameId    String   @map("opname_id") @db.Uuid
+  obatId      String   @map("obat_id") @db.Uuid
+  batchId     String   @map("batch_id") @db.Uuid
+  batchNumber String   @map("batch_number")
+  expiredDate DateTime @map("expired_date") @db.Date
+  lokasiId    String   @map("lokasi_id") @db.Uuid
+  qtySystem   Int      @map("qty_system")
+  qtyFisik    Int      @map("qty_fisik")
+
+  opname StokOpname   @relation(fields: [opnameId], references: [id], onDelete: Cascade)
+  obat   Obat         @relation(fields: [obatId], references: [id])
+  batch  Batch        @relation(fields: [batchId], references: [id])
+  lokasi LokasiGudang @relation(fields: [lokasiId], references: [id])
+
+  @@map("opname_item")
+}
+
+model MutasiLokasi {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  noMutasi     String   @unique @map("no_mutasi")
+  obatId       String   @map("obat_id") @db.Uuid
+  batchId      String   @map("batch_id") @db.Uuid
+  batchNumber  String   @map("batch_number")
+  expiredDate  DateTime @map("expired_date") @db.Date
+  dariLokasiId String   @map("dari_lokasi_id") @db.Uuid
+  keLokasiId   String   @map("ke_lokasi_id") @db.Uuid
+  qty          Int
+  catatan      String?
+  createdBy    String   @map("created_by") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  obat       Obat         @relation(fields: [obatId], references: [id])
+  batch      Batch        @relation(fields: [batchId], references: [id])
+  dariLokasi LokasiGudang @relation("MutasiDariLokasi", fields: [dariLokasiId], references: [id])
+  keLokasi   LokasiGudang @relation("MutasiKeLokasi", fields: [keLokasiId], references: [id])
+  creator    Profile      @relation("MutasiCreatedBy", fields: [createdBy], references: [id])
+
+  @@map("mutasi_lokasi")
+}
+
+model PurchaseOrder {
+  id               String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  noPo             String           @unique @map("no_po")
+  supplierId       String           @map("supplier_id") @db.Uuid
+  status           POStatus         @default(DRAFT)
+  terminPembayaran TerminPembayaran @map("termin_pembayaran")
+  ppnIncluded      Boolean          @default(false) @map("ppn_included")
+  subtotalNilai    Decimal          @default(0) @map("subtotal_nilai") @db.Decimal(15, 2)
+  totalPpn         Decimal          @default(0) @map("total_ppn") @db.Decimal(15, 2)
+  totalNilai       Decimal          @default(0) @map("total_nilai") @db.Decimal(15, 2)
+  tanggalPo        DateTime         @default(now()) @map("tanggal_po") @db.Date
+  tanggalKirim     DateTime?        @map("tanggal_kirim") @db.Date
+  catatan          String?
+  createdBy        String           @map("created_by") @db.Uuid
+  approvedBy       String?          @map("approved_by") @db.Uuid
+  approvedAt       DateTime?        @map("approved_at")
+  rejectedReason   String?          @map("rejected_reason")
+  createdAt        DateTime         @default(now()) @map("created_at")
+  updatedAt        DateTime         @updatedAt @map("updated_at")
+
+  supplier     Supplier      @relation(fields: [supplierId], references: [id])
+  creator      Profile       @relation("POCreatedBy", fields: [createdBy], references: [id])
+  approver     Profile?      @relation("POApprovedBy", fields: [approvedBy], references: [id])
+  items        PoItem[]
+  goodReceipts GoodReceipt[]
+
+  @@index([supplierId])
+  @@index([status])
+  @@map("purchase_order")
+}
+
+model PoItem {
+  id         String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  poId       String  @map("po_id") @db.Uuid
+  obatId     String  @map("obat_id") @db.Uuid
+  satuanNama String  @map("satuan_nama")
+  qty        Int
+  hargaBeli  Decimal @map("harga_beli") @db.Decimal(15, 2)
+
+  po      PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+  obat    Obat          @relation(fields: [obatId], references: [id])
+  grItems GrItem[]
+
+  @@map("po_item")
+}
+
+model GoodReceipt {
+  id                     String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  noGr                   String    @unique @map("no_gr")
+  poId                   String    @map("po_id") @db.Uuid
+  supplierId             String    @map("supplier_id") @db.Uuid
+  status                 GRStatus  @default(MENUNGGU_KEDATANGAN)
+  tanggalPerkiraanDatang DateTime? @map("tanggal_perkiraan_datang") @db.Date
+  tanggalTerima          DateTime? @map("tanggal_terima") @db.Date
+  catatan                String?
+  catatanAdmin           String?   @map("catatan_admin")
+  catatanApoteker        String?   @map("catatan_apoteker")
+  fotoUrls               String[]  @default([]) @map("foto_urls")
+  revisiKe               Int       @default(0) @map("revisi_ke")
+  createdBy              String    @map("created_by") @db.Uuid
+  approvedBy             String?   @map("approved_by") @db.Uuid
+  approvedAt             DateTime? @map("approved_at")
+  rejectedReason         String?   @map("rejected_reason")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+
+  po               PurchaseOrder     @relation(fields: [poId], references: [id])
+  supplier         Supplier          @relation(fields: [supplierId], references: [id])
+  creator          Profile           @relation("GRCreatedBy", fields: [createdBy], references: [id])
+  approver         Profile?          @relation("GRApprovedBy", fields: [approvedBy], references: [id])
+  items            GrItem[]
+  riwayatRevisi    GrRevisi[]
+  purchaseInvoices PurchaseInvoice[]
+
+  @@index([poId])
+  @@index([status])
+  @@map("good_receipt")
+}
+
+model GrItem {
+  id                String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  grId              String    @map("gr_id") @db.Uuid
+  poItemId          String    @map("po_item_id") @db.Uuid
+  obatId            String    @map("obat_id") @db.Uuid
+  satuanNama        String    @map("satuan_nama")
+  qtyPo             Int       @map("qty_po")
+  qtyTerima         Int       @default(0) @map("qty_terima")
+  batchNumber       String?   @map("batch_number")
+  tanggalProduksi   DateTime? @map("tanggal_produksi") @db.Date
+  expiredDate       DateTime? @map("expired_date") @db.Date
+  hargaBeli         Decimal   @map("harga_beli") @db.Decimal(15, 2)
+  lokasiId          String?   @map("lokasi_id") @db.Uuid
+  kondisi           String?   @default("BAIK")
+  keteranganKondisi String?   @map("keterangan_kondisi")
+
+  gr     GoodReceipt   @relation(fields: [grId], references: [id], onDelete: Cascade)
+  poItem PoItem        @relation(fields: [poItemId], references: [id])
+  lokasi LokasiGudang? @relation(fields: [lokasiId], references: [id])
+
+  @@map("gr_item")
+}
+
+model GrRevisi {
+  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  grId            String   @map("gr_id") @db.Uuid
+  revisiKe        Int      @map("revisi_ke")
+  alasanPenolakan String   @map("alasan_penolakan")
+  catatanApoteker String?  @map("catatan_apoteker")
+  fotoUrls        String[] @default([]) @map("foto_urls")
+  snapshot        Json     @default("{}")
+  submittedBy     String   @map("submitted_by") @db.Uuid
+  submittedAt     DateTime @default(now()) @map("submitted_at")
+
+  gr        GoodReceipt @relation(fields: [grId], references: [id], onDelete: Cascade)
+  submitter Profile     @relation("GrRevisiSubmittedBy", fields: [submittedBy], references: [id])
+
+  @@map("gr_revisi")
+}
+
+model PurchaseInvoice {
+  id                String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  noInvoice         String            @unique @map("no_invoice")
+  noInvoiceSupplier String?           @map("no_invoice_supplier")
+  grId              String            @map("gr_id") @db.Uuid
+  poId              String            @map("po_id") @db.Uuid
+  supplierId        String            @map("supplier_id") @db.Uuid
+  status            InvoiceStatus     @default(BELUM_BAYAR)
+  subtotalNilai     Decimal?          @map("subtotal_nilai") @db.Decimal(15, 2)
+  nilaiPpn          Decimal?          @map("nilai_ppn") @db.Decimal(15, 2)
+  totalNilai        Decimal           @map("total_nilai") @db.Decimal(15, 2)
+  terminPembayaran  TerminPembayaran? @map("termin_pembayaran")
+  tanggalInvoice    DateTime          @default(now()) @map("tanggal_invoice") @db.Date
+  tanggalJatuhTempo DateTime?         @map("tanggal_jatuh_tempo") @db.Date
+  tanggalBayar      DateTime?         @map("tanggal_bayar") @db.Date
+  filePdfName       String?           @map("file_pdf_name")
+  catatan           String?
+  createdBy         String            @map("created_by") @db.Uuid
+  markedLunasByUid  String?           @map("marked_lunas_by") @db.Uuid
+  markedLunasAt     DateTime?         @map("marked_lunas_at")
+  createdAt         DateTime          @default(now()) @map("created_at")
+  updatedAt         DateTime          @updatedAt @map("updated_at")
+
+  gr                   GoodReceipt @relation(fields: [grId], references: [id])
+  supplier             Supplier    @relation(fields: [supplierId], references: [id])
+  creator              Profile     @relation("InvoiceCreatedBy", fields: [createdBy], references: [id])
+  markedLunasByProfile Profile?    @relation("InvoiceMarkedLunasBy", fields: [markedLunasByUid], references: [id])
+
+  @@index([supplierId])
+  @@index([status])
+  @@map("purchase_invoice")
+}
+
+model AuditLog {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId      String   @map("user_id") @db.Uuid
+  userName    String   @map("user_name")
+  userRole    String   @map("user_role")
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id")
+  description String
+  beforeData  Json?    @map("before_data")
+  afterData   Json?    @map("after_data")
+  ipAddress   String?  @map("ip_address")
+  timestamp   DateTime @default(now())
+
+  user Profile @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+  @@index([action])
+  @@index([entityType])
+  @@index([timestamp])
+  @@map("audit_log")
+}
+
+model Notification {
+  id           String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  notifType    String   @map("notif_type")
+  type         String
+  title        String
+  message      String
+  href         String?
+  targetRoles  String[] @map("target_roles")
+  isRead       Boolean  @default(false) @map("is_read")
+  targetUserId String?  @map("target_user_id") @db.Uuid
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  targetUser Profile? @relation(fields: [targetUserId], references: [id])
+
+  @@index([isRead])
+  @@index([createdAt])
+  @@map("notification")
+}
