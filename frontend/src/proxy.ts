@@ -1,13 +1,13 @@
 import { updateSession } from "@/lib/supabase/middleware"
 import { NextResponse, type NextRequest } from "next/server"
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { supabaseResponse, user } = await updateSession(request)
   const { pathname } = request.nextUrl
 
   const isProtectedAdmin = pathname.startsWith("/admin")
   const isProtectedApoteker = pathname.startsWith("/apoteker")
-  const isAuthPage = pathname === "/login" || pathname === "/"
+  const isAuthPage = pathname === "/login"
 
   // Redirect ke login jika tidak ada session
   if ((isProtectedAdmin || isProtectedApoteker) && !user) {

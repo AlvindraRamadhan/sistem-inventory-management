@@ -33,6 +33,7 @@ const nextConfig: NextConfig = {
       "radix-ui",
       "date-fns",
     ],
+    turbopackFileSystemCacheForDev: false,
   },
 };
 

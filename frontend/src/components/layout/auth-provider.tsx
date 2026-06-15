@@ -17,11 +17,9 @@ export function AuthProvider({ children }: AuthProviderProps) {
   const router = useRouter();
   const [isReady, setIsReady] = useState(false);
 
-  // Run once on mount: restore + validate session from localStorage
+  // Run once on mount: restore + validate session, then mark ready
   useEffect(() => {
-    initAuth();
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setIsReady(true);
+    initAuth().then(() => setIsReady(true));
   }, [initAuth]);
 
   // Redirect to login after restore if no valid session
